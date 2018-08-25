@@ -21,6 +21,13 @@ class FSMPlot:
 		# Constants
 		self.flow_keyword = 'BOTS'
 
+	def create_state_title(self, flow_name, state_name):
+		"""
+		Creates state title from provided flow and state names.
+		"""
+
+		return flow_name + '.' + state_name
+
 	def createFSM(self):
 		"""
 		Reads finite state machine from chatbot.
@@ -47,17 +54,43 @@ class FSMPlot:
 
 		# Initial state
 		self.fsm.attr('node', shape='doublecircle')
-		self.fsm.node('default: root')
-		del flow_data['default']['states'][0]
+		self.fsm.node(self.create_state_title('default', 'root'))
 
-		# Other states
+		# Get flow names
+		flows = [flow for flow in flow_data]
+
+		# Other states + edges
 		self.fsm.attr('node', shape='circle')
 		for flow, value in flow_data.items():
 			for state in value['states']:
-				# Skip default:root
-				if flow == 'default' and state['name'] == 'root':
-					continue
-				self.fsm.node(flow + ': ' + state['name'])
+				# Skip adding default:root node
+				if flow != 'default' or state['name'] != 'root':
+					# Node
+					node_name = self.create_state_title(flow, state['name'])
+					# Add node
+					self.fsm.node(node_name)
+
+				# Edge
+				try:
+					next_state = state['action']['next']
+					next_flow = None
+					# Absolute state path
+					for fl in flows:
+						if next_state.startswith(fl + '.'):
+							next_state = next_state[len(fl) + 1:]
+							next_flow = fl
+					# Relative state path
+					if not next_flow:
+						next_flow = flow
+
+					next_node_name = self.create_state_title(next_flow, next_state)
+
+					print('Adding edge:')
+					print(node_name + ' ... ' + next_node_name)
+					# Add edge
+					self.fsm.edge(node_name, next_node_name)
+				except:
+					print('Custom action is not supported yet.')
 
 
 	def showFSM(self):
