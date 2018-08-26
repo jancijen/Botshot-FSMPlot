@@ -3,15 +3,36 @@ import yaml
 import importlib, importlib.util, os.path
 import inspect
 import re
-
-# TMP
-filepath = '../ExampleBot/'
+import argparse
+import random
 
 def module_from_file(module_name, filepath):
 	spec = importlib.util.spec_from_file_location(module_name, filepath)
 	module = importlib.util.module_from_spec(spec)
 	spec.loader.exec_module(module)
 	return module
+
+
+def generate_colors(n):
+	"""
+	Generate n different colors.
+	"""
+	colors = []
+	r = int(random.random() * 256)
+	g = int(random.random() * 256)
+	b = int(random.random() * 256)
+	step = 256 / n
+
+	for i in range(n):
+		r += step
+		g += step
+		b += step
+		r = int(r) % 256
+		g = int(g) % 256
+		b = int(b) % 256
+		colors.append('#%02x%02x%02x' % (r, g, b))
+
+	return colors
 
 class FSMPlot:
 	"""Class for plotting chatbot's finite state machine."""
@@ -23,9 +44,9 @@ class FSMPlot:
 		# Constants
 		self.flow_keyword = 'BOTS'
 
-	def create_state_title(self, flow_name, state_name):
+	def state_indetifier(self, flow_name, state_name):
 		"""
-		Creates state title from provided flow and state names.
+		Returns state title from provided flow and state names.
 
 		Args:
 			flow_name (string): name of the flow.
@@ -33,13 +54,13 @@ class FSMPlot:
 		"""
 		return flow_name + '.' + state_name
 
-	def createFSM(self):
+	def createFSM(self, colorful):
 		"""
 		Reads finite state machine from chatbot.
 		"""
 
 		# Get bot config
-		bot_settings = module_from_file('BOT_CONFIG', self.bot_filepath + 'ExampleBot/bot_settings.py')
+		bot_settings = module_from_file('BOT_CONFIG', os.path.join(self.bot_filepath, 'ExampleBot/bot_settings.py'))
 		# Get filepath to the flow file
 		flow_filepath = self.bot_filepath
 		flow_filepath += bot_settings.BOT_CONFIG[self.flow_keyword].pop()
@@ -52,32 +73,46 @@ class FSMPlot:
 			flow_data = yaml.load(flow_file)
 			#print(flow_data)
 
+		print('Graph drawing...')
 		# FSM
 		self.fsm = Digraph('finite_state_machine', filename='fsm.gv')
 		# FSM attributes
 		self.fsm.attr(rankdir='LR', size='8,5')
 
-		# Initial state
-		self.fsm.attr('node', shape='doublecircle')
-		self.fsm.node(self.create_state_title('default', 'root'))
-
 		# Get flow names
 		flows = [flow for flow in flow_data]
+		# Flow-color dictionary
+		if colorful: # Generate colors
+			colors = generate_colors(len(flows))
+			flow_color = {flow:color for flow, color in zip(flows, colors)}
+		else: # White colors
+			flow_color = {flow:'#FFFFFF' for flow in flows}
 
-		# Other states + edges
+		# Initial state
+		self.fsm.attr('node', shape='doublecircle', fillcolor=flow_color['default'], style='filled')
+		self.fsm.node(self.state_indetifier('default', 'root'))
+
+		# Other states
 		self.fsm.attr('node', shape='circle')
 		for flow, value in flow_data.items():
+			# Set flow's color
+			self.fsm.attr('node', fillcolor=flow_color[flow])
+
 			for state in value['states']:
 				# Skip adding default:root node
 				if flow != 'default' or state['name'] != 'root':
 					# Node
-					node_name = self.create_state_title(flow, state['name'])
+					node_name = self.state_indetifier(flow, state['name'])
 					# Add node
 					self.fsm.node(node_name)
 				else:
-					node_name = self.create_state_title('default', 'root')
+					node_name = self.state_indetifier('default', 'root')
+		
+		# Edges
+		for flow, value in flow_data.items():
+			for state in value['states']:
+				node_name = self.state_indetifier(flow, state['name'])
 
-				# Edge
 				try:
 					# Non-custom action
 					next_state = state['action']['next']
@@ -91,10 +126,9 @@ class FSMPlot:
 					if not next_flow:
 						next_flow = flow
 
-					next_node_name = self.create_state_title(next_flow, next_state)
+					next_node_name = self.state_indetifier(next_flow, next_state)
 
-					print('Adding edge:')
-					print(node_name + ' ... ' + next_node_name)
+					print('Adding edge: ' + node_name + ' -> ' + next_node_name)
 					# Add edge
 					self.fsm.edge(node_name, next_node_name)
 				except:
@@ -102,12 +136,9 @@ class FSMPlot:
 					action_name = state['action'].split('.')[-1]
 					action_filepath = state['action'][:-(len(action_name) + 1)].replace('.', '/') + '.py'
 					
-					print('Adding edge (custom action) \'' + action_name + '\' from \'' + action_filepath + '\':')
-					action_file_module = module_from_file(action_name, self.bot_filepath + action_filepath)
+					print('Adding edges from custom action \'' + action_name + '\' from file \'' + action_filepath + '\':')
+					action_file_module = module_from_file(action_name, os.path.join(self.bot_filepath, action_filepath))
 					action_fn_text = inspect.getsource(getattr(action_file_module, action_name))
-					#print(action_fn_text)
-
-					#print('---------------------')
 					return_indexes = [r.start() for r in re.finditer('(^|\W)return($|\W)', action_fn_text)]
 
 					# Add edges
@@ -130,15 +161,11 @@ class FSMPlot:
 						if not next_flow:
 							next_flow = flow
 
-						next_node_name = self.create_state_title(next_flow, next_state)
+						next_node_name = self.state_indetifier(next_flow, next_state)
 
 						# Add edge
+						print(node_name + ' -> ' + next_node_name)
 						self.fsm.edge(node_name, next_node_name)
-
-					#print('---------------------')
-					#print(return_indexes)
-					
-					#print('Custom action is not supported yet.')
 
 
 	def showFSM(self):
@@ -146,16 +173,24 @@ class FSMPlot:
 		Shows finite state machine.
 		"""
 
-		# TODO
 		if not self.fsm:
 			print('There is no FSM to show.')
 			return
 		# Show FSM
 		self.fsm.view()
 
+if __name__ == '__main__':
+	# Command line arguments
+	parser = argparse.ArgumentParser(description='Script for plotting flow graph of Botshot chatbot.')
+	parser.add_argument('--bot_dir', required=True, help='directory containing Botshot chatbot')
+	parser.add_argument('--colorful', action='store_true')
+	args = parser.parse_args()
 
-# TMP - TEST
-fsm_plot = FSMPlot(filepath)
-fsm_plot.createFSM()
-fsm_plot.showFSM()
+	# Arguments processing
+	bot_dir = os.path.join(os.path.dirname(__file__), args.bot_dir)
+
+	# Plotting
+	fsm_plot = FSMPlot(bot_dir)
+	fsm_plot.createFSM(args.colorful)
+	fsm_plot.showFSM()
 
