@@ -12,11 +12,14 @@ def module_from_file(module_name, filepath):
 	spec.loader.exec_module(module)
 	return module
 
-
 def generate_colors(n):
 	"""
 	Generate n different colors.
+
+	Args:
+		n (int): count of colors to generate.
 	"""
+
 	colors = []
 	r = int(random.random() * 256)
 	g = int(random.random() * 256)
@@ -37,8 +40,9 @@ def generate_colors(n):
 class FSMPlot:
 	"""Class for plotting chatbot's finite state machine."""
 
-	def __init__(self, bot_filepath):
+	def __init__(self, bot_filepath, graph_filepath):
 		self.bot_filepath = bot_filepath
+		self.graph_filepath = graph_filepath
 		self.fsm = None
 
 		# Constants
@@ -71,11 +75,10 @@ class FSMPlot:
 
 			# YAML
 			flow_data = yaml.load(flow_file)
-			#print(flow_data)
 
 		print('Graph drawing...')
 		# FSM
-		self.fsm = Digraph('finite_state_machine', filename='fsm.gv')
+		self.fsm = Digraph('finite_state_machine', filename=self.graph_filepath)
 		# FSM attributes
 		self.fsm.attr(rankdir='LR', size='8,5')
 
@@ -168,29 +171,53 @@ class FSMPlot:
 						self.fsm.edge(node_name, next_node_name)
 
 
-	def showFSM(self):
+	def save_and_show(self):
 		"""
-		Shows finite state machine.
+		Saves and shows finite state machine graph.
 		"""
 
 		if not self.fsm:
-			print('There is no FSM to show.')
+			print('There is no finite state machine to save/show.')
 			return
-		# Show FSM
+
+		# Save and show FSM
 		self.fsm.view()
+
+	def save(self):
+		"""
+		Saves finite state machine graph.
+		"""
+
+		if not self.fsm:
+			print('There is no finite state machine to show.')
+			return
+
+		# Save FSM 
+		# DOT source
+		self.fsm.save()
+		# Render graph
+		self.fsm.render()
 
 if __name__ == '__main__':
 	# Command line arguments
 	parser = argparse.ArgumentParser(description='Script for plotting flow graph of Botshot chatbot.')
 	parser.add_argument('--bot_dir', required=True, help='directory containing Botshot chatbot')
-	parser.add_argument('--colorful', action='store_true')
+	parser.add_argument('--colorful', action='store_true', help='whether chatbot\'s flows should colored')
+	parser.add_argument('--graph_path', default='fsm.gv', help='path where graph should be saved')
+	parser.add_argument('--dont_show', action='store_true', help='whether graph should be displayed after saving')
+	
 	args = parser.parse_args()
 
 	# Arguments processing
 	bot_dir = os.path.join(os.path.dirname(__file__), args.bot_dir)
 
 	# Plotting
-	fsm_plot = FSMPlot(bot_dir)
+	fsm_plot = FSMPlot(bot_dir, args.graph_path)
 	fsm_plot.createFSM(args.colorful)
-	fsm_plot.showFSM()
+	
+	# Save graph / save and show graph
+	if args.dont_show:
+		fsm_plot.save()
+	else:
+		fsm_plot.save_and_show()
 
