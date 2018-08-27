@@ -230,10 +230,10 @@ class GraphPlot:
 
 		# Read from flow file
 		with open(flow_filepath, 'r') as flow_file:
-			# YAML
+			# YAML/JSON
 			flow_data = yaml.load(flow_file)
 
-		print('Graph drawing...')
+		print('Drawing graph...')
 		# Graph
 		self.graph = Digraph('bot_graph', filename=self.graph_filepath)
 		# Graph attributes
