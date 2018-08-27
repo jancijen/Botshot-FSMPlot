@@ -10,6 +10,7 @@ def module_from_file(module_name, filepath):
 	spec = importlib.util.spec_from_file_location(module_name, filepath)
 	module = importlib.util.module_from_spec(spec)
 	spec.loader.exec_module(module)
+	
 	return module
 
 def generate_colors(n):
@@ -37,8 +38,27 @@ def generate_colors(n):
 
 	return colors
 
+def remove_comments(source_code):
+	"""
+	Removes comments from provided Python source code.
+
+	Args:
+		source_code (string): Python source code to remove comments from.
+	"""
+
+	# Remove multi-line comments (''' COMMENT ''')
+	to_return = re.sub(re.compile("'''.*?'''", re.DOTALL), "", source_code) 
+	# Remove multi-line comments (""" COMMENT """)
+	to_return = re.sub(re.compile("\"\"\".*?\"\"\"", re.DOTALL), "", to_return)
+	# Remove single-line comments (# COMMENT)
+	to_return = re.sub(re.compile("#.*?\n"), "", to_return)
+    
+	return to_return
+
 class FSMPlot:
-	"""Class for plotting chatbot's finite state machine."""
+	"""
+	Class for plotting chatbot's finite state machine.
+	"""
 
 	def __init__(self, bot_filepath, graph_filepath):
 		self.bot_filepath = bot_filepath
@@ -47,6 +67,9 @@ class FSMPlot:
 
 		# Constants
 		self.flow_keyword = 'BOTS'
+		self.default_color = '#FFFFFF'
+		self.initial_flow = 'default'
+		self.initial_state = 'root'
 
 	def state_indetifier(self, flow_name, state_name):
 		"""
@@ -61,6 +84,9 @@ class FSMPlot:
 	def createFSM(self, colorful):
 		"""
 		Reads finite state machine from chatbot.
+
+		Args:
+			colorful (boolean): whether chatbot's flows should be colored in created graph.
 		"""
 
 		# Get bot config
@@ -71,8 +97,6 @@ class FSMPlot:
 
 		# Read from flow file
 		with open(flow_filepath, 'r') as flow_file:
-			# TODO - JSON ?
-
 			# YAML
 			flow_data = yaml.load(flow_file)
 
@@ -89,27 +113,25 @@ class FSMPlot:
 			colors = generate_colors(len(flows))
 			flow_color = {flow:color for flow, color in zip(flows, colors)}
 		else: # White colors
-			flow_color = {flow:'#FFFFFF' for flow in flows}
+			flow_color = {flow:self.default_color for flow in flows}
 
-		# Initial state
+		# Initial node
 		self.fsm.attr('node', shape='doublecircle', fillcolor=flow_color['default'], style='filled')
-		self.fsm.node(self.state_indetifier('default', 'root'))
+		self.fsm.node(self.state_indetifier(self.initial_flow, self.initial_state))
 
-		# Other states
+		# Other node
 		self.fsm.attr('node', shape='circle')
 		for flow, value in flow_data.items():
 			# Set flow's color
 			self.fsm.attr('node', fillcolor=flow_color[flow])
 
 			for state in value['states']:
-				# Skip adding default:root node
-				if flow != 'default' or state['name'] != 'root':
+				# Add non-initial nodes
+				if flow != self.initial_flow or state['name'] != self.initial_state:
 					# Node
 					node_name = self.state_indetifier(flow, state['name'])
 					# Add node
 					self.fsm.node(node_name)
-				else:
-					node_name = self.state_indetifier('default', 'root')
 		
 		# Edges
 		for flow, value in flow_data.items():
@@ -141,7 +163,7 @@ class FSMPlot:
 					
 					print('Adding edges from custom action \'' + action_name + '\' from file \'' + action_filepath + '\':')
 					action_file_module = module_from_file(action_name, os.path.join(self.bot_filepath, action_filepath))
-					action_fn_text = inspect.getsource(getattr(action_file_module, action_name))
+					action_fn_text = remove_comments(inspect.getsource(getattr(action_file_module, action_name)))
 					return_indexes = [r.start() for r in re.finditer('(^|\W)return($|\W)', action_fn_text)]
 
 					# Add edges
@@ -176,9 +198,8 @@ class FSMPlot:
 		Saves and shows finite state machine graph.
 		"""
 
-		if not self.fsm:
-			print('There is no finite state machine to save/show.')
-			return
+		# Check for fsm
+		assert self.fsm, 'There is no finite state machine to save/show.'
 
 		# Save and show FSM
 		self.fsm.view()
@@ -188,9 +209,8 @@ class FSMPlot:
 		Saves finite state machine graph.
 		"""
 
-		if not self.fsm:
-			print('There is no finite state machine to show.')
-			return
+		# Check for fsm
+		assert self.fsm, 'There is no finite state machine to show.'
 
 		# Save FSM 
 		# DOT source
