@@ -72,15 +72,15 @@ def remove_comments(source_code):
     
 	return to_return
 
-class FSMPlot:
+class GraphPlot:
 	"""
-	Class for plotting chatbot's finite state machine.
+	Class for plotting chatbot's graph.
 	"""
 
 	def __init__(self, bot_filepath, graph_filepath):
 		self.bot_filepath = bot_filepath
 		self.graph_filepath = graph_filepath
-		self.fsm = None
+		self.graph = None
 		self.flows = None
 
 		# Constants
@@ -150,14 +150,14 @@ class FSMPlot:
 			flow_color = {flow:self.default_color for flow in self.flows}
 
 		# Initial node
-		self.fsm.attr('node', shape='doublecircle', fillcolor=flow_color['default'], style='filled')
-		self.fsm.node(self.state_indetifier(self.initial_flow, self.initial_state))
+		self.graph.attr('node', shape='doublecircle', fillcolor=flow_color['default'], style='filled')
+		self.graph.node(self.state_indetifier(self.initial_flow, self.initial_state))
 
 		# Other nodes
-		self.fsm.attr('node', shape='circle')
+		self.graph.attr('node', shape='circle')
 		for flow, value in flow_data.items():
 			# Set flow's color
-			self.fsm.attr('node', fillcolor=flow_color[flow])
+			self.graph.attr('node', fillcolor=flow_color[flow])
 
 			for state in value['states']:
 				# Add non-initial nodes
@@ -165,7 +165,7 @@ class FSMPlot:
 					# Node
 					node_name = self.state_indetifier(flow, state['name'])
 					# Add node
-					self.fsm.node(node_name)
+					self.graph.node(node_name)
 
 	def create_graph_edges(self, flow_data):
 		"""
@@ -187,7 +187,7 @@ class FSMPlot:
 
 					# Add edge
 					print('Adding edge: ' + node_name + ' -> ' + next_node_name)
-					self.fsm.edge(node_name, next_node_name)
+					self.graph.edge(node_name, next_node_name)
 				except: # Custom action
 					action_name = state['action'].split('.')[-1]
 					action_filepath = state['action'][:-(len(action_name) + 1)].replace('.', '/') + '.py'
@@ -212,7 +212,7 @@ class FSMPlot:
 
 						# Add edge
 						print(node_name + ' -> ' + next_node_name)
-						self.fsm.edge(node_name, next_node_name)
+						self.graph.edge(node_name, next_node_name)
 
 	def create_graph(self, colorful):
 		"""
@@ -234,10 +234,10 @@ class FSMPlot:
 			flow_data = yaml.load(flow_file)
 
 		print('Graph drawing...')
-		# FSM
-		self.fsm = Digraph('finite_state_machine', filename=self.graph_filepath)
-		# FSM attributes
-		self.fsm.attr(rankdir='LR', size='8,5')
+		# Graph
+		self.graph = Digraph('bot_graph', filename=self.graph_filepath)
+		# Graph attributes
+		self.graph.attr(rankdir='LR', size='8,5')
 
 		# Get all flows names
 		self.flows = [flow for flow in flow_data]
@@ -252,32 +252,32 @@ class FSMPlot:
 		Saves and shows graph.
 		"""
 
-		# Check for fsm
-		assert self.fsm, 'There is no finite state machine to save/show.'
+		# Check for graph
+		assert self.graph, 'There is no graph to save/show.'
 
-		# Save and show FSM
-		self.fsm.view()
+		# Save and show graph
+		self.graph.view()
 
 	def save(self):
 		"""
 		Saves graph.
 		"""
 
-		# Check for fsm
-		assert self.fsm, 'There is no finite state machine to show.'
+		# Check for graph
+		assert self.graph, 'There is no graph to show.'
 
-		# Save FSM 
+		# Save graph 
 		# DOT source
-		self.fsm.save()
+		self.graph.save()
 		# Render graph
-		self.fsm.render()
+		self.graph.render()
 
 if __name__ == '__main__':
 	# Command line arguments
 	parser = argparse.ArgumentParser(description='Script for plotting flow graph of Botshot chatbot.')
 	parser.add_argument('--bot_dir', required=True, help='directory containing Botshot chatbot')
 	parser.add_argument('--colorful', action='store_true', help='whether chatbot\'s flows should colored')
-	parser.add_argument('--graph_path', default='fsm.gv', help='path where graph should be saved')
+	parser.add_argument('--graph_path', default='graph.gv', help='path where graph should be saved')
 	parser.add_argument('--dont_show', action='store_true', help='whether graph should be displayed after saving')
 	
 	args = parser.parse_args()
@@ -286,11 +286,11 @@ if __name__ == '__main__':
 	bot_dir = os.path.join(os.path.dirname(__file__), args.bot_dir)
 
 	# Plotting
-	fsm_plot = FSMPlot(bot_dir, args.graph_path)
-	fsm_plot.create_graph(args.colorful)
+	graph_plot = GraphPlot(bot_dir, args.graph_path)
+	graph_plot.create_graph(args.colorful)
 	
 	# Save graph/save and show graph
 	if args.dont_show:
-		fsm_plot.save()
+		graph_plot.save()
 	else:
-		fsm_plot.save_and_show()
+		graph_plot.save_and_show()
