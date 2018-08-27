@@ -1,12 +1,23 @@
 from graphviz import Digraph
-import yaml
 import importlib, importlib.util, os.path
-import inspect
 import re
-import argparse
+import yaml
 import random
+import inspect
+import argparse
 
 def module_from_file(module_name, filepath):
+	"""
+	Gets certain module from given file.
+
+	Args:
+		module_name: Name of wanted module.
+		filepath: Path to the file of module.
+
+	Returns:
+		Module.
+	"""
+
 	spec = importlib.util.spec_from_file_location(module_name, filepath)
 	module = importlib.util.module_from_spec(spec)
 	spec.loader.exec_module(module)
@@ -15,10 +26,13 @@ def module_from_file(module_name, filepath):
 
 def generate_colors(n):
 	"""
-	Generate n different colors.
+	Generates n colors.
 
 	Args:
-		n (int): count of colors to generate.
+		n: Count of colors to generate.
+
+	Returns:
+		Generated colors in hexadecimal form.
 	"""
 
 	colors = []
@@ -43,7 +57,10 @@ def remove_comments(source_code):
 	Removes comments from provided Python source code.
 
 	Args:
-		source_code (string): Python source code to remove comments from.
+		source_code: Python source code to remove comments from.
+
+	Returns:
+		Source code without comments.
 	"""
 
 	# Remove multi-line comments (''' COMMENT ''')
@@ -64,6 +81,7 @@ class FSMPlot:
 		self.bot_filepath = bot_filepath
 		self.graph_filepath = graph_filepath
 		self.fsm = None
+		self.flows = None
 
 		# Constants
 		self.flow_keyword = 'BOTS'
@@ -73,20 +91,135 @@ class FSMPlot:
 
 	def state_indetifier(self, flow_name, state_name):
 		"""
-		Returns state title from provided flow and state names.
+		Returns state identifier from provided flow and state names.
 
 		Args:
-			flow_name (string): name of the flow.
-			state_name (string): name of the state.
+			flow_name: Name of the flow.
+			state_name: Name of the state.
+
+		Returns:
+			State identifier.
 		"""
+
 		return flow_name + '.' + state_name
 
-	def createFSM(self, colorful):
+	def flow_and_state(self, current_flow, state):
 		"""
-		Reads finite state machine from chatbot.
+		Returns flow and state from provided state.
 
 		Args:
-			colorful (boolean): whether chatbot's flows should be colored in created graph.
+			current_flow: Current flow (used in case of relative state).
+			state: Relative or absolute state.
+
+		Returns:
+			Flow and state.
+		"""
+
+		# Check flows
+		assert self.flows, 'Flows has not been initialized.'
+
+		flow = None
+
+		# Absolute state
+		for fl in self.flows:
+			if state.startswith(fl + '.'):
+				state = state[len(fl) + 1:]
+				flow = fl
+
+		# Relative state
+		if not flow:
+			flow = current_flow
+
+		return flow, state
+
+
+	def create_graph_nodes(self, colorful, flow_data):
+		"""
+		Creates graph nodes from chatbot's flows.
+
+		Args:
+			colorful: Whether chatbot's flows should be colored in created graph.
+			flow_data: Chatbot's flow dictionary.
+		"""
+
+		# Flow-color dictionary
+		if colorful: # Generate colors
+			colors = generate_colors(len(self.flows))
+			flow_color = {flow:color for flow, color in zip(self.flows, colors)}
+		else: # White colors
+			flow_color = {flow:self.default_color for flow in self.flows}
+
+		# Initial node
+		self.fsm.attr('node', shape='doublecircle', fillcolor=flow_color['default'], style='filled')
+		self.fsm.node(self.state_indetifier(self.initial_flow, self.initial_state))
+
+		# Other nodes
+		self.fsm.attr('node', shape='circle')
+		for flow, value in flow_data.items():
+			# Set flow's color
+			self.fsm.attr('node', fillcolor=flow_color[flow])
+
+			for state in value['states']:
+				# Add non-initial nodes
+				if flow != self.initial_flow or state['name'] != self.initial_state:
+					# Node
+					node_name = self.state_indetifier(flow, state['name'])
+					# Add node
+					self.fsm.node(node_name)
+
+	def create_graph_edges(self, flow_data):
+		"""
+		Creates graph edges from chatbot's flows.
+
+		Args:
+			flow_data: Chatbot's flow dictionary.
+		"""
+
+		# Edges
+		for flow, value in flow_data.items():
+			for state in value['states']:
+				node_name = self.state_indetifier(flow, state['name'])
+
+				try: # Non-custom action
+					# Get next (destination) state information
+					next_flow, next_state = self.flow_and_state(flow, state['action']['next'])
+					next_node_name = self.state_indetifier(next_flow, next_state)
+
+					# Add edge
+					print('Adding edge: ' + node_name + ' -> ' + next_node_name)
+					self.fsm.edge(node_name, next_node_name)
+				except: # Custom action
+					action_name = state['action'].split('.')[-1]
+					action_filepath = state['action'][:-(len(action_name) + 1)].replace('.', '/') + '.py'
+					
+					print('Adding edges from custom action \'' + action_name + '\' from file \'' + action_filepath + '\':')
+					action_file_module = module_from_file(action_name, os.path.join(self.bot_filepath, action_filepath))
+					action_fn_text = remove_comments(inspect.getsource(getattr(action_file_module, action_name)))
+					return_indexes = [r.start() for r in re.finditer('(^|\W)return($|\W)', action_fn_text)]
+
+					# Add edge(s)
+					for i in return_indexes:
+						# Get return value(s)
+						ret_val = action_fn_text[i + len('return') + 1:].split()[0]
+						ret_val = ret_val.strip('\"\'')
+						# Remove optional ':' from the end of the action
+						if ret_val.endswith(':'):
+								ret_val = ret_val[:-len(':')]
+
+						# Get next (destination) state information
+						next_flow, next_state = self.flow_and_state(flow, ret_val)
+						next_node_name = self.state_indetifier(next_flow, next_state)
+
+						# Add edge
+						print(node_name + ' -> ' + next_node_name)
+						self.fsm.edge(node_name, next_node_name)
+
+	def create_graph(self, colorful):
+		"""
+		Creates graph from chatbot's flows.
+
+		Args:
+			colorful: Whether chatbot's flows should be colored in created graph.
 		"""
 
 		# Get bot config
@@ -106,96 +239,17 @@ class FSMPlot:
 		# FSM attributes
 		self.fsm.attr(rankdir='LR', size='8,5')
 
-		# Get flow names
-		flows = [flow for flow in flow_data]
-		# Flow-color dictionary
-		if colorful: # Generate colors
-			colors = generate_colors(len(flows))
-			flow_color = {flow:color for flow, color in zip(flows, colors)}
-		else: # White colors
-			flow_color = {flow:self.default_color for flow in flows}
+		# Get all flows names
+		self.flows = [flow for flow in flow_data]
 
-		# Initial node
-		self.fsm.attr('node', shape='doublecircle', fillcolor=flow_color['default'], style='filled')
-		self.fsm.node(self.state_indetifier(self.initial_flow, self.initial_state))
-
-		# Other node
-		self.fsm.attr('node', shape='circle')
-		for flow, value in flow_data.items():
-			# Set flow's color
-			self.fsm.attr('node', fillcolor=flow_color[flow])
-
-			for state in value['states']:
-				# Add non-initial nodes
-				if flow != self.initial_flow or state['name'] != self.initial_state:
-					# Node
-					node_name = self.state_indetifier(flow, state['name'])
-					# Add node
-					self.fsm.node(node_name)
-		
-		# Edges
-		for flow, value in flow_data.items():
-			for state in value['states']:
-				node_name = self.state_indetifier(flow, state['name'])
-
-				try:
-					# Non-custom action
-					next_state = state['action']['next']
-					next_flow = None
-					# Absolute state path
-					for fl in flows:
-						if next_state.startswith(fl + '.'):
-							next_state = next_state[len(fl) + 1:]
-							next_flow = fl
-					# Relative state path
-					if not next_flow:
-						next_flow = flow
-
-					next_node_name = self.state_indetifier(next_flow, next_state)
-
-					print('Adding edge: ' + node_name + ' -> ' + next_node_name)
-					# Add edge
-					self.fsm.edge(node_name, next_node_name)
-				except:
-					# Custom action
-					action_name = state['action'].split('.')[-1]
-					action_filepath = state['action'][:-(len(action_name) + 1)].replace('.', '/') + '.py'
-					
-					print('Adding edges from custom action \'' + action_name + '\' from file \'' + action_filepath + '\':')
-					action_file_module = module_from_file(action_name, os.path.join(self.bot_filepath, action_filepath))
-					action_fn_text = remove_comments(inspect.getsource(getattr(action_file_module, action_name)))
-					return_indexes = [r.start() for r in re.finditer('(^|\W)return($|\W)', action_fn_text)]
-
-					# Add edges
-					for i in return_indexes:
-						ret_val = action_fn_text[i + len('return') + 1:].split()[0]
-						ret_val = ret_val.strip('\"\'')
-						# Remove optional ':' from the end of action
-						if ret_val.endswith(':'):
-								ret_val = ret_val[:-len(':')]
-
-          				# TODO!
-						next_state = ret_val
-						next_flow = None
-						# Absolute state path
-						for fl in flows:
-							if next_state.startswith(fl + '.'):
-								next_state = next_state[len(fl) + 1:]
-								next_flow = fl
-						# Relative state path
-						if not next_flow:
-							next_flow = flow
-
-						next_node_name = self.state_indetifier(next_flow, next_state)
-
-						# Add edge
-						print(node_name + ' -> ' + next_node_name)
-						self.fsm.edge(node_name, next_node_name)
-
+		# Add nodes
+		self.create_graph_nodes(colorful, flow_data)
+		# Add edges
+		self.create_graph_edges(flow_data)
 
 	def save_and_show(self):
 		"""
-		Saves and shows finite state machine graph.
+		Saves and shows graph.
 		"""
 
 		# Check for fsm
@@ -206,7 +260,7 @@ class FSMPlot:
 
 	def save(self):
 		"""
-		Saves finite state machine graph.
+		Saves graph.
 		"""
 
 		# Check for fsm
@@ -233,11 +287,10 @@ if __name__ == '__main__':
 
 	# Plotting
 	fsm_plot = FSMPlot(bot_dir, args.graph_path)
-	fsm_plot.createFSM(args.colorful)
+	fsm_plot.create_graph(args.colorful)
 	
-	# Save graph / save and show graph
+	# Save graph/save and show graph
 	if args.dont_show:
 		fsm_plot.save()
 	else:
 		fsm_plot.save_and_show()
-
