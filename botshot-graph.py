@@ -223,15 +223,19 @@ class GraphPlot:
 		"""
 
 		# Get bot config
-		bot_settings = module_from_file('BOT_CONFIG', os.path.join(self.bot_filepath, 'ExampleBot/bot_settings.py'))
-		# Get filepath to the flow file
-		flow_filepath = self.bot_filepath
-		flow_filepath += bot_settings.BOT_CONFIG[self.flow_keyword].pop()
+		bot_settings = module_from_file('bot_settings', os.path.join(self.bot_filepath, 'ExampleBot/bot_settings.py'))
+		
+		# Get flow data
+		flow_data = {}
+		for flow_file in bot_settings.BOT_CONFIG[self.flow_keyword]:
+			# Get filepath to the flow file
+			flow_filepath = self.bot_filepath
+			flow_filepath += flow_file
 
-		# Read from flow file
-		with open(flow_filepath, 'r') as flow_file:
-			# YAML/JSON
-			flow_data = yaml.load(flow_file)
+			# Read from flow file
+			with open(flow_filepath, 'r') as flow_f:
+				# YAML/JSON
+				flow_data.update(yaml.load(flow_f))
 
 		print('Drawing graph...')
 		# Graph
