@@ -79,7 +79,12 @@ class GraphPlot:
 
 	def __init__(self, bot_filepath, graph_filepath):
 		self.bot_filepath = bot_filepath
+		# Add last backslash if needed
+		if not self.bot_filepath.endswith('/'):
+			self.bot_filepath += '/'
+			
 		self.graph_filepath = graph_filepath
+		self.bot_name = self.bot_filepath.split('/')[-2]
 		self.graph = None
 		self.flows = None
 
