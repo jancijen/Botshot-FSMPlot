@@ -160,17 +160,18 @@ class GraphPlot:
 
 		# Other nodes
 		self.graph.attr('node', shape='circle')
-		for flow, value in flow_data.items():
-			# Set flow's color
-			self.graph.attr('node', fillcolor=flow_color[flow])
+		for flow_filepath, flow_dict in flow_data.items():
+			for flow, value in flow_dict.items():
+				# Set flow's color
+				self.graph.attr('node', fillcolor=flow_color[flow])
 
-			for state in value['states']:
-				# Add non-initial nodes
-				if flow != self.initial_flow or state['name'] != self.initial_state:
-					# Node
-					node_name = self.state_indetifier(flow, state['name'])
-					# Add node
-					self.graph.node(node_name)
+				for state in value['states']:
+					# Add non-initial nodes
+					if flow != self.initial_flow or state['name'] != self.initial_state:
+						# Node
+						node_name = self.state_indetifier(flow, state['name'])
+						# Add node
+						self.graph.node(node_name)
 
 	def create_graph_edges(self, flow_data):
 		"""
@@ -181,43 +182,50 @@ class GraphPlot:
 		"""
 
 		# Edges
-		for flow, value in flow_data.items():
-			for state in value['states']:
-				node_name = self.state_indetifier(flow, state['name'])
 
-				try: # Non-custom action
-					# Get next (destination) state information
-					next_flow, next_state = self.flow_and_state(flow, state['action']['next'])
-					next_node_name = self.state_indetifier(next_flow, next_state)
+		for flow_filepath, flow_dict in flow_data.items():
+			for flow, value in flow_dict.items():
+				for state in value['states']:
+					node_name = self.state_indetifier(flow, state['name'])
 
-					# Add edge
-					print('Adding edge: ' + node_name + ' -> ' + next_node_name)
-					self.graph.edge(node_name, next_node_name)
-				except: # Custom action
-					action_name = state['action'].split('.')[-1]
-					action_filepath = state['action'][:-(len(action_name) + 1)].replace('.', '/') + '.py'
-					
-					print('Adding edges from custom action \'' + action_name + '\' from file \'' + action_filepath + '\':')
-					action_file_module = module_from_file(action_name, os.path.join(self.bot_filepath, action_filepath))
-					action_fn_text = remove_comments(inspect.getsource(getattr(action_file_module, action_name)))
-					return_indexes = [r.start() for r in re.finditer('(^|\W)return($|\W)', action_fn_text)]
-
-					# Add edge(s)
-					for i in return_indexes:
-						# Get return value(s)
-						ret_val = action_fn_text[i + len('return') + 1:].split()[0]
-						ret_val = ret_val.strip('\"\'')
-						# Remove optional ':' from the end of the action
-						if ret_val.endswith(':'):
-								ret_val = ret_val[:-len(':')]
-
+					try: # Non-custom action
 						# Get next (destination) state information
-						next_flow, next_state = self.flow_and_state(flow, ret_val)
+						next_flow, next_state = self.flow_and_state(flow, state['action']['next'])
 						next_node_name = self.state_indetifier(next_flow, next_state)
 
 						# Add edge
-						print(node_name + ' -> ' + next_node_name)
+						print('Adding edge: ' + node_name + ' -> ' + next_node_name)
 						self.graph.edge(node_name, next_node_name)
+					except: # Custom action
+						action_name = state['action'].split('.')[-1]
+						action_filepath = state['action'][:-(len(action_name) + 1)].replace('.', '/') + '.py'
+						
+						print('Adding edges from custom action \'' + action_name + '\' from file \'' + action_filepath + '\':')
+						try: # Absolute action path
+							action_file_module = module_from_file(action_name, os.path.join(self.bot_filepath, action_filepath))
+						except: # Relative action path
+							flow_dir = os.path.dirname(flow_filepath)
+							action_filepath = os.path.join(flow_dir, action_filepath)
+							action_file_module = module_from_file(action_name, os.path.join(self.bot_filepath, action_filepath))
+						action_fn_text = remove_comments(inspect.getsource(getattr(action_file_module, action_name)))
+						return_indexes = [r.start() for r in re.finditer('(^|\W)return($|\W)', action_fn_text)]
+
+						# Add edge(s)
+						for i in return_indexes:
+							# Get return value(s)
+							ret_val = action_fn_text[i + len('return') + 1:].split()[0]
+							ret_val = ret_val.strip('\"\'')
+							# Remove optional ':' from the end of the action
+							if ret_val.endswith(':'):
+									ret_val = ret_val[:-len(':')]
+
+							# Get next (destination) state information
+							next_flow, next_state = self.flow_and_state(flow, ret_val)
+							next_node_name = self.state_indetifier(next_flow, next_state)
+
+							# Add edge
+							print(node_name + ' -> ' + next_node_name)
+							self.graph.edge(node_name, next_node_name)
 
 	def create_graph(self, colorful):
 		"""
@@ -240,7 +248,7 @@ class GraphPlot:
 			# Read from flow file
 			with open(flow_filepath, 'r') as flow_f:
 				# YAML/JSON
-				flow_data.update(yaml.load(flow_f))
+				flow_data[flow_filepath] = yaml.load(flow_f)
 
 		print('Drawing graph...')
 		# Graph
@@ -249,7 +257,7 @@ class GraphPlot:
 		self.graph.attr(rankdir='LR', size='8,5')
 
 		# Get all flows names
-		self.flows = [flow for flow in flow_data]
+		self.flows = [flow for flow_file in flow_data for flow in flow_data[flow_file]]
 
 		# Add nodes
 		self.create_graph_nodes(colorful, flow_data)
