@@ -236,7 +236,7 @@ class GraphPlot:
 		"""
 
 		# Get bot config
-		bot_settings = module_from_file('bot_settings', os.path.join(self.bot_filepath, 'ExampleBot/bot_settings.py'))
+		bot_settings = module_from_file('bot_settings', os.path.join(self.bot_filepath, self.bot_name + '/bot_settings.py'))
 		
 		# Get flow data
 		flow_data = {}
