@@ -5,6 +5,7 @@ import yaml
 import random
 import inspect
 import argparse
+import django
 
 def module_from_file(module_name, filepath):
 	"""
@@ -290,6 +291,9 @@ class GraphPlot:
 		self.graph.render()
 
 if __name__ == '__main__':
+	os.environ.setdefault("DJANGO_SETTINGS_MODULE", "chatbot.settings")
+	django.setup()
+
 	# Command line arguments
 	parser = argparse.ArgumentParser(description='Script for plotting flow graph of Botshot chatbot.')
 	parser.add_argument('--bot_dir', required=True, help='directory containing Botshot chatbot')
