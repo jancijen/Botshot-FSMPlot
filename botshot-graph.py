@@ -89,6 +89,13 @@ class GraphPlot:
 		self.graph = None
 		self.flows = None
 
+		# Django setup
+		abs_bot_filepath = os.path.abspath(self.bot_filepath)
+		print('Bot path: ' + abs_bot_filepath)
+		os.environ.setdefault('PYTHONPATH', abs_bot_filepath)
+		os.environ.setdefault('DJANGO_SETTINGS_MODULE', self.bot_name + '.settings')
+		django.setup()
+
 		# Constants
 		self.flow_keyword = 'BOTS'
 		self.default_color = '#FFFFFF'
@@ -291,9 +298,6 @@ class GraphPlot:
 		self.graph.render()
 
 if __name__ == '__main__':
-	os.environ.setdefault("DJANGO_SETTINGS_MODULE", "chatbot.settings")
-	django.setup()
-
 	# Command line arguments
 	parser = argparse.ArgumentParser(description='Script for plotting flow graph of Botshot chatbot.')
 	parser.add_argument('--bot_dir', required=True, help='directory containing Botshot chatbot')
