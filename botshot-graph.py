@@ -6,6 +6,7 @@ import random
 import inspect
 import argparse
 import django
+import sys
 
 def module_from_file(module_name, filepath):
 	"""
@@ -90,9 +91,7 @@ class GraphPlot:
 		self.flows = None
 
 		# Django setup
-		abs_bot_filepath = os.path.abspath(self.bot_filepath)
-		print('Bot path: ' + abs_bot_filepath)
-		os.environ.setdefault('PYTHONPATH', abs_bot_filepath)
+		sys.path.append(self.bot_filepath)
 		os.environ.setdefault('DJANGO_SETTINGS_MODULE', self.bot_name + '.settings')
 		django.setup()
 
