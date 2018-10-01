@@ -103,6 +103,7 @@ class GraphPlot:
 		self.default_color = '#FFFFFF'
 		self.initial_flow = 'default'
 		self.initial_state = 'root'
+		self.json_edge_value = 3
 
 	def state_indetifier(self, flow_name, state_name):
 		"""
@@ -192,7 +193,6 @@ class GraphPlot:
 		"""
 
 		# Edges
-
 		for flow_filepath, flow_dict in flow_data.items():
 			for flow, value in flow_dict.items():
 				for state in value['states']:
@@ -290,8 +290,6 @@ class GraphPlot:
 
 		# Get all flows names
 		self.flows = [flow for flow_file in flow_data for flow in flow_data[flow_file]]
-		
-		# Nodes
 		flow_indexes = {flow:index for index, flow in enumerate(self.flows, 1)}
 		
 		print('Generating JSON...')
@@ -309,6 +307,60 @@ class GraphPlot:
 					    'id': node_name,
 					    'group': flow_indexes[flow]
 					})
+
+		# Add edges to JSON
+		self.json['links'] = []
+		for flow_filepath, flow_dict in flow_data.items():
+			for flow, value in flow_dict.items():
+				for state in value['states']:
+					node_name = self.state_indetifier(flow, state['name'])
+
+					try: # Non-custom action
+						# Get next (destination) state information
+						next_flow, next_state = self.flow_and_state(flow, state['action']['next'])
+						next_node_name = self.state_indetifier(next_flow, next_state)
+
+						# Add edge to JSON
+						print('Adding edge: ' + node_name + ' -> ' + next_node_name)
+						self.json['links'].append({  
+						    'source': node_name,
+						    'target': next_node_name,
+						    'value': self.json_edge_value
+						})
+					except: # Custom action
+						action_name = state['action'].split('.')[-1]
+						action_filepath = state['action'][:-(len(action_name) + 1)].replace('.', '/') + '.py'
+						
+						print('Adding edges from custom action \'' + action_name + '\' from file \'' + action_filepath + '\':')
+						try: # Absolute action path
+							action_file_module = module_from_file(action_name, os.path.join(self.bot_filepath, action_filepath))
+						except: # Relative action path
+							flow_dir = os.path.dirname(flow_filepath)
+							action_filepath = os.path.join(flow_dir, action_filepath)
+							action_file_module = module_from_file(action_name, os.path.join(self.bot_filepath, action_filepath))
+						action_fn_text = remove_comments(inspect.getsource(getattr(action_file_module, action_name)))
+						return_indexes = [r.start() for r in re.finditer('(^|\W)return($|\W)', action_fn_text)]
+
+						# Add edge(s)
+						for i in return_indexes:
+							# Get return value(s)
+							ret_val = action_fn_text[i + len('return') + 1:].split()[0]
+							ret_val = ret_val.strip('\"\'')
+							# Remove optional ':' from the end of the action
+							if ret_val.endswith(':'):
+									ret_val = ret_val[:-len(':')]
+
+							# Get next (destination) state information
+							next_flow, next_state = self.flow_and_state(flow, ret_val)
+							next_node_name = self.state_indetifier(next_flow, next_state)
+
+							# Add edge to JSON
+							print(node_name + ' -> ' + next_node_name)
+							self.json['links'].append({  
+							    'source': node_name,
+							    'target': next_node_name,
+							    'value': self.json_edge_value
+							})
 
 	def save_json(self):
 		with open(self.json_filepath, 'w') as outfile:  
