@@ -7,6 +7,7 @@ import inspect
 import argparse
 import django
 import sys
+import json
 
 def module_from_file(module_name, filepath):
 	"""
@@ -79,16 +80,18 @@ class GraphPlot:
 	Class for plotting chatbot's graph.
 	"""
 
-	def __init__(self, bot_filepath, graph_filepath):
+	def __init__(self, bot_filepath, graph_filepath, json_filepath):
 		self.bot_filepath = bot_filepath
 		# Add last backslash if needed
 		if not self.bot_filepath.endswith('/'):
 			self.bot_filepath += '/'
 			
 		self.graph_filepath = graph_filepath
+		self.json_filepath = json_filepath
 		self.bot_name = self.bot_filepath.split('/')[-2]
 		self.graph = None
 		self.flows = None
+		self.json = None
 
 		# Django setup
 		sys.path.append(self.bot_filepath)
@@ -234,14 +237,7 @@ class GraphPlot:
 							print(node_name + ' -> ' + next_node_name)
 							self.graph.edge(node_name, next_node_name)
 
-	def create_graph(self, colorful):
-		"""
-		Creates graph from chatbot's flows.
-
-		Args:
-			colorful: Whether chatbot's flows should be colored in created graph.
-		"""
-
+	def get_flow_data(self):
 		# Get bot config
 		bot_settings = module_from_file('bot_settings', os.path.join(self.bot_filepath, self.bot_name + '/bot_settings.py'))
 		
@@ -257,19 +253,66 @@ class GraphPlot:
 				# YAML/JSON
 				flow_data[flow_filepath] = yaml.load(flow_f)
 
+		return flow_data
+
+	def create_graph(self, colorful):
+		"""
+		Creates graph from chatbot's flows.
+
+		Args:
+			colorful: Whether chatbot's flows should be colored in created graph.
+		"""
+
+		# Get flow data
+		flow_data = self.get_flow_data()
+
+		# Get all flows names
+		self.flows = [flow for flow_file in flow_data for flow in flow_data[flow_file]]
+
 		print('Drawing graph...')
 		# Graph
 		self.graph = Digraph('bot_graph', filename=self.graph_filepath)
 		# Graph attributes
 		self.graph.attr(rankdir='LR', size='8,5')
 
-		# Get all flows names
-		self.flows = [flow for flow_file in flow_data for flow in flow_data[flow_file]]
-
 		# Add nodes
 		self.create_graph_nodes(colorful, flow_data)
 		# Add edges
 		self.create_graph_edges(flow_data)
+
+	def generate_json(self):
+		"""
+		Generates JSON file from chatbot's flows.
+		"""
+
+		# Get flow data
+		flow_data = self.get_flow_data()
+
+		# Get all flows names
+		self.flows = [flow for flow_file in flow_data for flow in flow_data[flow_file]]
+		
+		# Nodes
+		flow_indexes = {flow:index for index, flow in enumerate(self.flows, 1)}
+		
+		print('Generating JSON...')
+		# Create JSON
+		self.json = {}
+		# Add nodes to JSON
+		self.json['nodes'] = []
+		for flow_filepath, flow_dict in flow_data.items():
+			for flow, value in flow_dict.items():
+				for state in value['states']:
+					# Node
+					node_name = self.state_indetifier(flow, state['name'])
+					# Add node to JSON
+					self.json['nodes'].append({  
+					    'id': node_name,
+					    'group': flow_indexes[flow]
+					})
+
+	def save_json(self):
+		with open(self.json_filepath, 'w') as outfile:  
+			json.dump(self.json, outfile)
 
 	def save_and_show(self):
 		"""
@@ -303,6 +346,8 @@ if __name__ == '__main__':
 	parser.add_argument('--colorful', action='store_true', help='whether chatbot\'s flows should colored')
 	parser.add_argument('--graph_path', default='graph.gv', help='path where graph should be saved')
 	parser.add_argument('--dont_show', action='store_true', help='whether graph should be displayed after saving')
+	parser.add_argument('--json_output', action='store_true', help='whether JSON should be produced instead of dot file and image')
+	parser.add_argument('--json_path', default='graph.json', help='path where JSON should be saved')
 	
 	args = parser.parse_args()
 
@@ -310,11 +355,17 @@ if __name__ == '__main__':
 	bot_dir = os.path.join(os.path.dirname(__file__), args.bot_dir)
 
 	# Plotting
-	graph_plot = GraphPlot(bot_dir, args.graph_path)
-	graph_plot.create_graph(args.colorful)
+	graph_plot = GraphPlot(bot_dir, args.graph_path, args.json_path)
 	
-	# Save graph/save and show graph
-	if args.dont_show:
-		graph_plot.save()
-	else:
-		graph_plot.save_and_show()
+	# JSON
+	if args.json_output:
+		graph_plot.generate_json()
+		graph_plot.save_json()
+	else: # Dot file and image
+		graph_plot.create_graph(args.colorful)
+	
+		# Save graph/save and show graph
+		if args.dont_show:
+			graph_plot.save()
+		else:
+			graph_plot.save_and_show()
