@@ -102,54 +102,50 @@ class GraphPlot:
         return flow_data
 
 
-    def create_graph_nodes(self, colorful, flow_data):
+    # --------------------------------------------------------------------------
+    # Graph - IR
+    # --------------------------------------------------------------------------
+
+    def create_ir_nodes(self, flow_data):
         """
-        Creates graph nodes from chatbot's flows.
+        Creates nodes of intermediate representation of flow graph from flow data.
 
         Args:
-            colorful: Whether chatbot's flows should be colored in created graph.
             flow_data: Chatbot's flow data dictionary.
+
+        Returns:
+            List of nodes in format (node_name, flow).
         """
 
-        # Flow-color dictionary
-        if colorful: # Generate colors
-            colors = ut.generate_colors(len(self.flows))
-            flow_color = {flow:color for flow, color in zip(self.flows, colors)}
-        else: # White colors
-            flow_color = {flow:self.default_color for flow in self.flows}
-
-        # Initial node
-        self.graph.attr('node', shape='doublecircle', fillcolor=flow_color['default'], style='filled')
-        self.graph.node(ut.state_identifier(self.initial_flow, self.initial_state))
-
-        # Other nodes
-        self.graph.attr('node', shape='circle')
+        # Nodes
+        nodes = []
         for flow_filepath, flow_dict in flow_data.items():
             for flow, value in flow_dict.items():
-                # Set flow's color
-                self.graph.attr('node', fillcolor=flow_color[flow])
-
                 for state in value['states']:
-                    # Add non-initial nodes
-                    if flow != self.initial_flow or state['name'] != self.initial_state:
-                        # Node
-                        node_name = ut.state_identifier(flow, state['name'])
-                        # Add node
-                        self.graph.node(node_name)
+                    # Node
+                    node_name = ut.state_identifier(flow, state['name'])
+                    # Add node to JSON
+                    nodes.append((node_name, flow))
 
-    def create_graph_edges(self, flow_data):
+        return nodes
+
+    def create_ir_edges(self, flow_data):
         """
-        Creates graph edges from chatbot's flows.
+        Creates edges of intermediate representation of flow graph from flow data.
 
         Args:
             flow_data: Chatbot's flow data dictionary.
+
+        Returns:
+            List of edges in format (from_vertex, to_vertex).
         """
 
         # Edges
+        edges = []
         for flow_filepath, flow_dict in flow_data.items():
             for flow, value in flow_dict.items():
                 for state in value['states']:
-                    node_name = self.state_indetifier(flow, state['name'])
+                    node_name = ut.state_identifier(flow, state['name'])
 
                     try:  # Non-custom action
                         # Get next (destination) state information
@@ -162,11 +158,11 @@ class GraphPlot:
 
                             if 'next' in state['action']:
                                 next_flow, next_state = self.flow_and_state(flow, state['action']['next'])
-                                next_node_name = self.state_indetifier(next_flow, next_state)
+                                next_node_name = ut.state_identifier(next_flow, next_state)
 
                                 # Add edge
-                                 print('Adding edge: {} -> {}'.format(node_name, next_node_name))
-                                self.graph.edge(node_name, next_node_name)
+                                print('{} -> {}'.format(node_name, next_node_name))
+                                edges.append((node_name, next_node_name))
                             else:
                                 print("State {} is terminal".format(state['name']))
 
@@ -177,15 +173,15 @@ class GraphPlot:
 
                             print('Adding edges from custom action \'{}\' from file \'{}\':'.format(action_name, action_filepath))
                             try:  # Absolute action path
-                                action_file_module = module_from_file(action_name,
+                                action_file_module = ut.module_from_file(action_name,
                                                                       os.path.join(self.bot_filepath, action_filepath))
                             except:  # Relative action path
                                 flow_dir = os.path.dirname(flow_filepath)
                                 action_filepath = os.path.join(flow_dir, action_filepath)
-                                action_file_module = module_from_file(action_name,
+                                action_file_module = ut.module_from_file(action_name,
                                                                       os.path.join(self.bot_filepath, action_filepath))
-                            action_fn_text = remove_comments(inspect.getsource(getattr(action_file_module, action_name)))
-                            return_indexes = [r.start() for r in re.finditer('(^|\W)return($|\W)', action_fn_text)]
+                            action_fn_text = ut.remove_comments(inspect.getsource(getattr(action_file_module, action_name)))
+                            return_indexes = ut.return_indexes(action_fn_text)
 
                             # Add edge(s)
                             for i in return_indexes:
@@ -198,14 +194,78 @@ class GraphPlot:
 
                                 # Get next (destination) state information
                                 next_flow, next_state = self.flow_and_state(flow, ret_val)
-                                next_node_name = self.state_indetifier(next_flow, next_state)
+                                next_node_name = ut.state_identifier(next_flow, next_state)
 
                                 # Add edge
                                 print('{} -> {}'.format(node_name, next_node_name))
-                                self.graph.edge(node_name, next_node_name)
+                                edges.append((node_name, next_node_name))
                     except Exception as ex:
                         print("Error processing state, skipping!")
                         print(ex)
+
+        return edges
+
+    def create_ir(self):
+        """
+        Creates intermediate representation of flow graph from flow data.
+        """
+
+        # Get flow data
+        flow_data = self.get_flow_data()
+
+        # Flows
+        self.flows = [flow for flow_file in flow_data for flow in flow_data[flow_file]]
+        # Nodes
+        self.nodes = self.create_ir_nodes(flow_data)
+        # Edges
+        self.edges = self.create_ir_edges(flow_data)
+
+
+    # --------------------------------------------------------------------------
+    # Graph - DOT, Image
+    # --------------------------------------------------------------------------
+
+    def create_graph_nodes(self, colorful, flow_data):
+        """
+        Creates graph nodes from chatbot's flows.
+
+        Args:
+            colorful: Whether chatbot's flows should be colored in created graph.
+            flow_data: Chatbot's flow data dictionary.
+        """
+
+        # Flow-color dictionary
+        if colorful: # Generate colors
+            colors = ut.generate_colors(len(self.flows))
+            flow_color = {flow: color for flow, color in zip(self.flows, colors)}
+        else: # White colors
+            flow_color = {flow: self.default_color for flow in self.flows}
+
+        # Initial node
+        self.graph.attr('node', shape='doublecircle', fillcolor=flow_color['default'], style='filled')
+        self.graph.node(ut.state_identifier(self.initial_flow, self.initial_state))
+
+        # Other nodes
+        self.graph.attr('node', shape='circle')
+        for name, flow in self.nodes:
+            # Add non-initial nodes
+            if flow != self.initial_flow or name != self.initial_state:
+                # Set flow's color
+                self.graph.attr('node', fillcolor=flow_color[flow])
+                # Add node
+                self.graph.node(name)
+
+    def create_graph_edges(self, flow_data):
+        """
+        Creates graph edges from chatbot's flows.
+
+        Args:
+            flow_data: Chatbot's flow data dictionary.
+        """
+
+        # Edges
+        for from_vertex, to_vertex in self.edges:
+            self.graph.edge(from_vertex, to_vertex)
                         
     def create_graph(self, colorful):
         """
@@ -232,7 +292,12 @@ class GraphPlot:
         # Add edges
         self.create_graph_edges(flow_data)
 
-    def generate_nodes_json(self, flow_data):
+
+    # --------------------------------------------------------------------------
+    # Graph - JSON
+    # --------------------------------------------------------------------------
+
+    def generate_json_nodes(self, flow_data):
         """
         Generates graph nodes from chatbot's flows (to JSON).
 
@@ -240,21 +305,18 @@ class GraphPlot:
             flow_data: Chatbot's flow data dictionary.
         """
 
+        flow_indexes = {flow: index for index, flow in enumerate(self.flows, 1)}
+
         # Add nodes to JSON
         self.json['nodes'] = []
-        for flow_filepath, flow_dict in flow_data.items():
-            for flow, value in flow_dict.items():
-                for state in value['states']:
-                    # Node
-                    node_name = ut.state_indetifier(flow, state['name'])
-                    # Add node to JSON
-                    self.json['nodes'].append({
-                        'id': node_name,
-                        'group': flow_indexes[flow]
-                    })
-                    self.allowed_states.add(node_name)
+        for name, flow in self.nodes:
+            # Add node to JSON
+            self.json['nodes'].append({
+                'id': name,
+                'group': flow_indexes[flow]
+            })
 
-    def generate_edges_json(self, flow_data):
+    def generate_json_edges(self, flow_data):
         """
         Generates graph edges from chatbot's flows (to JSON).
 
@@ -264,82 +326,12 @@ class GraphPlot:
 
         # Add edges to JSON
         self.json['links'] = []
-        for flow_filepath, flow_dict in flow_data.items():
-            for flow, value in flow_dict.items():
-                for state in value['states']:
-                    node_name = self.state_indetifier(flow, state['name'])
-
-                    try:
-                        if 'action' not in state or not state['action']:
-                            print("State {} has no action, skipping!".format(state['name']))
-                            continue
-
-                        elif isinstance(state['action'], dict):
-
-                            if 'next' in state['action']:
-                                # Get next (destination) state information
-                                next_flow, next_state = self.flow_and_state(flow, state['action']['next'])
-                                next_node_name = self.state_indetifier(next_flow, next_state)
-
-                                if next_node_name not in self.allowed_states:
-                                    print("Next state {} not found in states, skipping!".format(next_node_name))
-                                    continue
-
-                                # Add edge to JSON
-                                print('Adding edge: ' + node_name + ' -> ' + next_node_name)
-                                self.json['links'].append({
-                                    'source': node_name,
-                                    'target': next_node_name,
-                                    'value': self.json_edge_value
-                                })
-                            else:
-                                print("State {} is terminal".format(state['name']))
-
-                        else:  # action is a function
-                            action_name = state['action'].split('.')[-1]
-                            action_filepath = state['action'][:-(len(action_name) + 1)].replace('.', '/') + '.py'
-
-                            print(
-                                'Adding edges from custom action \'' + action_name + '\' from file \'' + action_filepath + '\':')
-                            try:  # Absolute action path
-                                action_file_module = module_from_file(action_name,
-                                                                      os.path.join(self.bot_filepath, action_filepath))
-                            except:  # Relative action path
-                                flow_dir = os.path.dirname(flow_filepath)
-                                action_filepath = os.path.join(flow_dir, action_filepath)
-                                action_file_module = module_from_file(action_name,
-                                                                      os.path.join(self.bot_filepath, action_filepath))
-                            action_fn_text = remove_comments(
-                                inspect.getsource(getattr(action_file_module, action_name)))
-                            return_indexes = [r.start() for r in re.finditer('(^|\W)return($|\W)', action_fn_text)]
-
-                            # Add edge(s)
-                            for i in return_indexes:
-                                # Get return value(s)
-                                ret_val = action_fn_text[i + len('return') + 1:].split()[0]
-                                ret_val = ret_val.strip('\"\'')
-                                # Remove optional ':' from the end of the action
-                                if ret_val.endswith(':'):
-                                    ret_val = ret_val[:-len(':')]
-
-                                # Get next (destination) state information
-                                next_flow, next_state = self.flow_and_state(flow, ret_val)
-                                next_node_name = self.state_indetifier(next_flow, next_state)
-
-                                if next_node_name not in self.allowed_states:
-                                    print("Next state {} not found in states, skipping!".format(next_node_name))
-                                    continue
-
-                                # Add edge to JSON
-                                print(node_name + ' -> ' + next_node_name)
-                                self.json['links'].append({
-                                    'source': node_name,
-                                    'target': next_node_name,
-                                    'value': self.json_edge_value
-                                })
-                    except Exception as ex:
-                        print("Error processing state, skipping!")
-                        print(ex)
+        for from_vertex, to_vertex in self.edges:
+            self.json['links'].append({
+                'source': from_vertex,
+                'target': to_vertex,
+                'value': self.json_edge_value
+            })
 
     def generate_json(self):
         """
@@ -351,18 +343,19 @@ class GraphPlot:
 
         # Get all flows names
         self.flows = [flow for flow_file in flow_data for flow in flow_data[flow_file]]
-        flow_indexes = {flow: index for index, flow in enumerate(self.flows, 1)}
         
         print('Generating JSON...')
         # Create JSON
         self.json = {}
-        # Allowed states
-        self.allowed_states = set()
         # Nodes
-        self.generate_nodes_json(flow_data)
+        self.generate_json_nodes(flow_data)
         # Edges
-        self.generate_edges_json(flow_data)
+        self.generate_json_edges(flow_data)
         
+    # --------------------------------------------------------------------------
+    # Save/Load
+    # --------------------------------------------------------------------------
+
     def save_json(self):
         # Check for JSON
         assert self.json, 'There is no JSON to save.'
@@ -396,6 +389,10 @@ class GraphPlot:
         # Render graph
         self.graph.render()
 
+# --------------------------------------------------------------------------
+# Main
+# --------------------------------------------------------------------------
+
 if __name__ == '__main__':
     # Command line arguments
     # Example: python3 ./botshot-graph.py --bot_dir . --bot_name chatbot
@@ -413,10 +410,12 @@ if __name__ == '__main__':
 
     # Arguments processing
     bot_dir = os.path.join(os.path.dirname(__file__), args.bot_dir)
-    bot_dir = os.path.abspath(bot_dir)
+    #bot_dir = os.path.abspath(bot_dir)
 
     # Plotting
     graph_plot = GraphPlot(bot_dir, args.bot_name, args.graph_path, args.json_path)
+    # Create intermediate representation of flow graph
+    graph_plot.create_ir()
 
     # JSON
     if args.json_output:
