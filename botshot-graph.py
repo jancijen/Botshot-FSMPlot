@@ -14,15 +14,23 @@ class GraphPlot:
     Class for plotting chatbot's graph / generating JSON graph file.
     """
 
-    def __init__(self, bot_filepath, graph_filepath, json_filepath):
+    def __init__(self, bot_filepath, bot_name, graph_filepath, json_filepath):
+        """
+        Args:
+            bot_filepath:    Django project root.
+            bot_name:        Optional - name of django app containing bot (can differ from django project name).
+            graph_filepath:  Where to save generated graph.
+            json_filepath:   Where to save generated JSON.
+        """
+  
         self.bot_filepath = bot_filepath
         # Add last backslash if needed
         if not self.bot_filepath.endswith('/'):
             self.bot_filepath += '/'
-            
+
         self.graph_filepath = graph_filepath
         self.json_filepath = json_filepath
-        self.bot_name = self.bot_filepath.split('/')[-2]
+        self.bot_name = bot_name or self.bot_filepath.split('/')[-2]
         self.graph = None
         self.flows = None
         self.json = None
@@ -141,47 +149,64 @@ class GraphPlot:
         for flow_filepath, flow_dict in flow_data.items():
             for flow, value in flow_dict.items():
                 for state in value['states']:
-                    node_name = ut.state_identifier(flow, state['name'])
+                    node_name = self.state_indetifier(flow, state['name'])
 
-                    try: # Non-custom action
+                    try:  # Non-custom action
                         # Get next (destination) state information
-                        next_flow, next_state = self.flow_and_state(flow, state['action']['next'])
-                        next_node_name = ut.state_identifier(next_flow, next_state)
 
-                        # Add edge
-                        print('Adding edge: {} -> {}'.format(node_name, next_node_name))
-                        self.graph.edge(node_name, next_node_name)
-                    except: # Custom action
-                        action_name = state['action'].split('.')[-1]
-                        action_filepath = state['action'][:-(len(action_name) + 1)].replace('.', '/') + '.py'
-                        
-                        print('Adding edges from custom action \'{}\' from file \'{}\':'.format(action_name, action_filepath))
-                        try: # Absolute action path
-                            action_file_module = ut.module_from_file(action_name, os.path.join(self.bot_filepath, action_filepath))
-                        except: # Relative action path
-                            flow_dir = os.path.dirname(flow_filepath)
-                            action_filepath = os.path.join(flow_dir, action_filepath)
-                            action_file_module = ut.module_from_file(action_name, os.path.join(self.bot_filepath, action_filepath))
-                        action_fn_text = ut.remove_comments(inspect.getsource(getattr(action_file_module, action_name)))
-                        return_indexes = ut.return_indexes(action_fn_text)
+                        if 'action' not in state or not state['action']:
+                            print("State {} has no action, skipping!".format(state['name']))
+                            continue
 
-                        # Add edge(s)
-                        for i in return_indexes:
-                            # Get return value(s)
-                            ret_val = action_fn_text[i + len('return') + 1:].split()[0]
-                            ret_val = ret_val.strip('\"\'')
-                            # Remove optional ':' from the end of the action
-                            if ret_val.endswith(':'):
+                        elif isinstance(state['action'], dict):
+
+                            if 'next' in state['action']:
+                                next_flow, next_state = self.flow_and_state(flow, state['action']['next'])
+                                next_node_name = self.state_indetifier(next_flow, next_state)
+
+                                # Add edge
+                                 print('Adding edge: {} -> {}'.format(node_name, next_node_name))
+                                self.graph.edge(node_name, next_node_name)
+                            else:
+                                print("State {} is terminal".format(state['name']))
+
+                        else:  # action is a function
+
+                            action_name = state['action'].split('.')[-1]
+                            action_filepath = state['action'][:-(len(action_name) + 1)].replace('.', '/') + '.py'
+
+                            print('Adding edges from custom action \'{}\' from file \'{}\':'.format(action_name, action_filepath))
+                            try:  # Absolute action path
+                                action_file_module = module_from_file(action_name,
+                                                                      os.path.join(self.bot_filepath, action_filepath))
+                            except:  # Relative action path
+                                flow_dir = os.path.dirname(flow_filepath)
+                                action_filepath = os.path.join(flow_dir, action_filepath)
+                                action_file_module = module_from_file(action_name,
+                                                                      os.path.join(self.bot_filepath, action_filepath))
+                            action_fn_text = remove_comments(inspect.getsource(getattr(action_file_module, action_name)))
+                            return_indexes = [r.start() for r in re.finditer('(^|\W)return($|\W)', action_fn_text)]
+
+                            # Add edge(s)
+                            for i in return_indexes:
+                                # Get return value(s)
+                                ret_val = action_fn_text[i + len('return') + 1:].split()[0]
+                                ret_val = ret_val.strip('\"\'')
+                                # Remove optional ':' from the end of the action
+                                if ret_val.endswith(':'):
                                     ret_val = ret_val[:-len(':')]
 
-                            # Get next (destination) state information
-                            next_flow, next_state = self.flow_and_state(flow, ret_val)
-                            next_node_name = ut.state_identifier(next_flow, next_state)
+                                # Get next (destination) state information
+                                next_flow, next_state = self.flow_and_state(flow, ret_val)
+                                next_node_name = self.state_indetifier(next_flow, next_state)
 
-                            # Add edge
-                            print('{} -> {}'.format(node_name, next_node_name))
-                            self.graph.edge(node_name, next_node_name)
-
+                                # Add edge
+                                print('{} -> {}'.format(node_name, next_node_name))
+                                self.graph.edge(node_name, next_node_name)
+                    except Exception as ex:
+                        print("Error processing state, skipping!")
+                        print(ex)
+                        
     def create_graph(self, colorful):
         """
         Creates graph from chatbot's flows.
@@ -221,12 +246,13 @@ class GraphPlot:
             for flow, value in flow_dict.items():
                 for state in value['states']:
                     # Node
-                    node_name = ut.state_identifier(flow, state['name'])
+                    node_name = ut.state_indetifier(flow, state['name'])
                     # Add node to JSON
-                    self.json['nodes'].append({  
+                    self.json['nodes'].append({
                         'id': node_name,
                         'group': flow_indexes[flow]
                     })
+                    self.allowed_states.add(node_name)
 
     def generate_edges_json(self, flow_data):
         """
@@ -241,54 +267,79 @@ class GraphPlot:
         for flow_filepath, flow_dict in flow_data.items():
             for flow, value in flow_dict.items():
                 for state in value['states']:
-                    node_name = ut.state_identifier(flow, state['name'])
+                    node_name = self.state_indetifier(flow, state['name'])
 
-                    try: # Non-custom action
-                        # Get next (destination) state information
-                        next_flow, next_state = self.flow_and_state(flow, state['action']['next'])
-                        next_node_name = ut.state_identifier(next_flow, next_state)
+                    try:
+                        if 'action' not in state or not state['action']:
+                            print("State {} has no action, skipping!".format(state['name']))
+                            continue
 
-                        # Add edge to JSON
-                        print('Adding edge: {} -> {}'.format(node_name, next_node_name))
-                        self.json['links'].append({  
-                            'source': node_name,
-                            'target': next_node_name,
-                            'value': self.json_edge_value
-                        })
-                    except: # Custom action
-                        action_name = state['action'].split('.')[-1]
-                        action_filepath = state['action'][:-(len(action_name) + 1)].replace('.', '/') + '.py'
-                        
-                        print('Adding edges from custom action \'{}\' from file \'{}\':'.format(action_name, action_filepath))
-                        try: # Absolute action path
-                            action_file_module = ut.module_from_file(action_name, os.path.join(self.bot_filepath, action_filepath))
-                        except: # Relative action path
-                            flow_dir = os.path.dirname(flow_filepath)
-                            action_filepath = os.path.join(flow_dir, action_filepath)
-                            action_file_module = ut.module_from_file(action_name, os.path.join(self.bot_filepath, action_filepath))
-                        action_fn_text = ut.remove_comments(inspect.getsource(getattr(action_file_module, action_name)))
-                        return_indexes = [r.start() for r in re.finditer('(^|\W)return($|\W)', action_fn_text)]
+                        elif isinstance(state['action'], dict):
 
-                        # Add edge(s)
-                        for i in return_indexes:
-                            # Get return value(s)
-                            ret_val = afction_fn_text[i + len('return') + 1:].split()[0]
-                            ret_val = ret_val.strip('\"\'')
-                            # Remove optional ':' from the end of the action
-                            if ret_val.endswith(':'):
+                            if 'next' in state['action']:
+                                # Get next (destination) state information
+                                next_flow, next_state = self.flow_and_state(flow, state['action']['next'])
+                                next_node_name = self.state_indetifier(next_flow, next_state)
+
+                                if next_node_name not in self.allowed_states:
+                                    print("Next state {} not found in states, skipping!".format(next_node_name))
+                                    continue
+
+                                # Add edge to JSON
+                                print('Adding edge: ' + node_name + ' -> ' + next_node_name)
+                                self.json['links'].append({
+                                    'source': node_name,
+                                    'target': next_node_name,
+                                    'value': self.json_edge_value
+                                })
+                            else:
+                                print("State {} is terminal".format(state['name']))
+
+                        else:  # action is a function
+                            action_name = state['action'].split('.')[-1]
+                            action_filepath = state['action'][:-(len(action_name) + 1)].replace('.', '/') + '.py'
+
+                            print(
+                                'Adding edges from custom action \'' + action_name + '\' from file \'' + action_filepath + '\':')
+                            try:  # Absolute action path
+                                action_file_module = module_from_file(action_name,
+                                                                      os.path.join(self.bot_filepath, action_filepath))
+                            except:  # Relative action path
+                                flow_dir = os.path.dirname(flow_filepath)
+                                action_filepath = os.path.join(flow_dir, action_filepath)
+                                action_file_module = module_from_file(action_name,
+                                                                      os.path.join(self.bot_filepath, action_filepath))
+                            action_fn_text = remove_comments(
+                                inspect.getsource(getattr(action_file_module, action_name)))
+                            return_indexes = [r.start() for r in re.finditer('(^|\W)return($|\W)', action_fn_text)]
+
+                            # Add edge(s)
+                            for i in return_indexes:
+                                # Get return value(s)
+                                ret_val = action_fn_text[i + len('return') + 1:].split()[0]
+                                ret_val = ret_val.strip('\"\'')
+                                # Remove optional ':' from the end of the action
+                                if ret_val.endswith(':'):
                                     ret_val = ret_val[:-len(':')]
 
-                            # Get next (destination) state information
-                            next_flow, next_state = self.flow_and_state(flow, ret_val)
-                            next_node_name = ut.state_identifier(next_flow, next_state)
+                                # Get next (destination) state information
+                                next_flow, next_state = self.flow_and_state(flow, ret_val)
+                                next_node_name = self.state_indetifier(next_flow, next_state)
 
-                            # Add edge to JSON
-                            print('{} -> {}'.format(node_name, next_node_name))
-                            self.json['links'].append({  
-                                'source': node_name,
-                                'target': next_node_name,
-                                'value': self.json_edge_value
-                            })
+                                if next_node_name not in self.allowed_states:
+                                    print("Next state {} not found in states, skipping!".format(next_node_name))
+                                    continue
+
+                                # Add edge to JSON
+                                print(node_name + ' -> ' + next_node_name)
+                                self.json['links'].append({
+                                    'source': node_name,
+                                    'target': next_node_name,
+                                    'value': self.json_edge_value
+                                })
+                    except Exception as ex:
+                        print("Error processing state, skipping!")
+                        print(ex)
 
     def generate_json(self):
         """
@@ -300,22 +351,24 @@ class GraphPlot:
 
         # Get all flows names
         self.flows = [flow for flow_file in flow_data for flow in flow_data[flow_file]]
-        flow_indexes = {flow:index for index, flow in enumerate(self.flows, 1)}
+        flow_indexes = {flow: index for index, flow in enumerate(self.flows, 1)}
         
         print('Generating JSON...')
         # Create JSON
         self.json = {}
+        # Allowed states
+        self.allowed_states = set()
         # Nodes
         self.generate_nodes_json(flow_data)
         # Edges
         self.generate_edges_json(flow_data)
-
+        
     def save_json(self):
         # Check for JSON
         assert self.json, 'There is no JSON to save.'
 
         # Save JSON
-        with open(self.json_filepath, 'w') as outfile:  
+        with open(self.json_filepath, 'w') as outfile:
             json.dump(self.json, outfile)
 
     def save_and_show(self):
@@ -345,22 +398,26 @@ class GraphPlot:
 
 if __name__ == '__main__':
     # Command line arguments
-    parser = argparse.ArgumentParser(description='Script for plotting flow graph of Botshot chatbot.')
-    parser.add_argument('--bot_dir', required=True, help='directory containing Botshot chatbot')
+    # Example: python3 ./botshot-graph.py --bot_dir . --bot_name chatbot
+    parser = argparse.ArgumentParser(description='Script for plotting flow graph of Botshot chatbot and generating its JSON representation.')
+    parser.add_argument('--bot_dir', required=True, help='root directory of Botshot chatbot')
+    parser.add_argument('--bot_name', required=False, help='chatbot django app name (optional)')
     parser.add_argument('--colorful', action='store_true', help='whether chatbot\'s flows should colored')
     parser.add_argument('--graph_path', default='graph.gv', help='path where graph should be saved')
     parser.add_argument('--dont_show', action='store_true', help='whether graph should be displayed after saving')
-    parser.add_argument('--json_output', action='store_true', help='whether JSON should be produced instead of dot file and image')
+    parser.add_argument('--json_output', action='store_true',
+                        help='whether JSON should be produced instead of dot file and image')
     parser.add_argument('--json_path', default='graph.json', help='path where JSON should be saved')
     
     args = parser.parse_args()
 
     # Arguments processing
     bot_dir = os.path.join(os.path.dirname(__file__), args.bot_dir)
+    bot_dir = os.path.abspath(bot_dir)
 
     # Plotting
-    graph_plot = GraphPlot(bot_dir, args.graph_path, args.json_path)
-    
+    graph_plot = GraphPlot(bot_dir, args.bot_name, args.graph_path, args.json_path)
+
     # JSON
     if args.json_output:
         graph_plot.generate_json()
