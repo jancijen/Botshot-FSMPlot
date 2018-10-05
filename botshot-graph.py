@@ -149,13 +149,13 @@ class GraphPlot:
                         next_node_name = ut.state_identifier(next_flow, next_state)
 
                         # Add edge
-                        print('Adding edge: ' + node_name + ' -> ' + next_node_name)
+                        print('Adding edge: {} -> {}'.format(node_name, next_node_name))
                         self.graph.edge(node_name, next_node_name)
                     except: # Custom action
                         action_name = state['action'].split('.')[-1]
                         action_filepath = state['action'][:-(len(action_name) + 1)].replace('.', '/') + '.py'
                         
-                        print('Adding edges from custom action \'' + action_name + '\' from file \'' + action_filepath + '\':')
+                        print('Adding edges from custom action \'{}\' from file \'{}\':'.format(action_name, action_filepath))
                         try: # Absolute action path
                             action_file_module = ut.module_from_file(action_name, os.path.join(self.bot_filepath, action_filepath))
                         except: # Relative action path
@@ -179,7 +179,7 @@ class GraphPlot:
                             next_node_name = ut.state_identifier(next_flow, next_state)
 
                             # Add edge
-                            print(node_name + ' -> ' + next_node_name)
+                            print('{} -> {}'.format(node_name, next_node_name))
                             self.graph.edge(node_name, next_node_name)
 
     def create_graph(self, colorful):
@@ -249,7 +249,7 @@ class GraphPlot:
                         next_node_name = ut.state_identifier(next_flow, next_state)
 
                         # Add edge to JSON
-                        print('Adding edge: ' + node_name + ' -> ' + next_node_name)
+                        print('Adding edge: {} -> {}'.format(node_name, next_node_name))
                         self.json['links'].append({  
                             'source': node_name,
                             'target': next_node_name,
@@ -259,7 +259,7 @@ class GraphPlot:
                         action_name = state['action'].split('.')[-1]
                         action_filepath = state['action'][:-(len(action_name) + 1)].replace('.', '/') + '.py'
                         
-                        print('Adding edges from custom action \'' + action_name + '\' from file \'' + action_filepath + '\':')
+                        print('Adding edges from custom action \'{}\' from file \'{}\':'.format(action_name, action_filepath))
                         try: # Absolute action path
                             action_file_module = ut.module_from_file(action_name, os.path.join(self.bot_filepath, action_filepath))
                         except: # Relative action path
@@ -283,7 +283,7 @@ class GraphPlot:
                             next_node_name = ut.state_identifier(next_flow, next_state)
 
                             # Add edge to JSON
-                            print(node_name + ' -> ' + next_node_name)
+                            print('{} -> {}'.format(node_name, next_node_name))
                             self.json['links'].append({  
                                 'source': node_name,
                                 'target': next_node_name,
