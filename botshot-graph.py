@@ -1,95 +1,28 @@
 from graphviz import Digraph
-import importlib, importlib.util, os.path
-import re
+import os.path
 import yaml
-import random
 import inspect
 import argparse
 import django
 import sys
 import json
-
-
-def module_from_file(module_name, filepath):
-    """
-	Gets certain module from given file.
-
-	Args:
-		module_name: Name of wanted module.
-		filepath: Path to the file of module.
-
-	Returns:
-		Module.
-	"""
-
-    spec = importlib.util.spec_from_file_location(module_name, filepath)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-
-    return module
-
-
-def generate_colors(n):
-    """
-	Generates n colors.
-
-	Args:
-		n: Count of colors to generate.
-
-	Returns:
-		Generated colors in hexadecimal form.
-	"""
-
-    colors = []
-    r = int(random.random() * 256)
-    g = int(random.random() * 256)
-    b = int(random.random() * 256)
-    step = 256 / n
-
-    for i in range(n):
-        r += step
-        g += step
-        b += step
-        r = int(r) % 256
-        g = int(g) % 256
-        b = int(b) % 256
-        colors.append('#%02x%02x%02x' % (r, g, b))
-
-    return colors
-
-
-def remove_comments(source_code):
-    """
-	Removes comments from provided Python source code.
-
-	Args:
-		source_code: Python source code to remove comments from.
-
-	Returns:
-		Source code without comments.
-	"""
-
-    # Remove multi-line comments (''' COMMENT ''')
-    to_return = re.sub(re.compile("'''.*?'''", re.DOTALL), "", source_code)
-    # Remove multi-line comments (""" COMMENT """)
-    to_return = re.sub(re.compile("\"\"\".*?\"\"\"", re.DOTALL), "", to_return)
-    # Remove single-line comments (# COMMENT)
-    to_return = re.sub(re.compile("#.*?\n"), "", to_return)
-
-    return to_return
+import utility as ut
 
 
 class GraphPlot:
     """
-	Class for plotting chatbot's graph.
-	"""
+    Class for plotting chatbot's graph / generating JSON graph file.
+    """
 
     def __init__(self, bot_filepath, bot_name, graph_filepath, json_filepath):
         """
-        :param bot_filepath:    django project root
-        :param bot_name:        optional - name of django app containing bot (can differ from django project name)
-        :param graph_filepath:  where to save generated graph
+        Args:
+            bot_filepath:    Django project root.
+            bot_name:        Optional - name of django app containing bot (can differ from django project name).
+            graph_filepath:  Where to save generated graph.
+            json_filepath:   Where to save generated JSON.
         """
+  
         self.bot_filepath = bot_filepath
         # Add last backslash if needed
         if not self.bot_filepath.endswith('/'):
@@ -98,15 +31,9 @@ class GraphPlot:
         self.graph_filepath = graph_filepath
         self.json_filepath = json_filepath
         self.bot_name = bot_name or self.bot_filepath.split('/')[-2]
-
         self.graph = None
         self.flows = None
         self.json = None
-
-        # Django setup
-        sys.path.append(self.bot_filepath)
-        os.environ.setdefault('DJANGO_SETTINGS_MODULE', self.bot_name + '.settings')
-        django.setup()
 
         # Constants
         self.flow_keyword = 'BOTS'
@@ -115,31 +42,22 @@ class GraphPlot:
         self.initial_state = 'root'
         self.json_edge_value = 3
 
-    def state_indetifier(self, flow_name, state_name):
-        """
-		Returns state identifier from provided flow and state names.
-
-		Args:
-			flow_name: Name of the flow.
-			state_name: Name of the state.
-
-		Returns:
-			State identifier.
-		"""
-
-        return flow_name + '.' + state_name
+        # Django setup
+        sys.path.append(self.bot_filepath)
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', self.bot_name + '.settings')
+        django.setup()
 
     def flow_and_state(self, current_flow, state):
         """
-		Returns flow and state from provided state.
+        Returns flow and state from provided state.
 
-		Args:
-			current_flow: Current flow (used in case of relative state).
-			state: Relative or absolute state.
+        Args:
+            current_flow: Current flow (used in case of relative state).
+            state: Relative or absolute state.
 
-		Returns:
-			Flow and state.
-		"""
+        Returns:
+            Flow and state.
+        """
 
         # Check flows
         assert self.flows, 'Flows has not been initialized.'
@@ -158,25 +76,51 @@ class GraphPlot:
 
         return flow, state
 
+    def get_flow_data(self):
+        """
+        Returns flow data from bot's settings as a dictionary.
+
+        Returns:
+            Flow data dictionary.
+        """
+
+        # Get bot config
+        bot_settings = ut.module_from_file('bot_settings', os.path.join(self.bot_filepath, self.bot_name + '/bot_settings.py'))
+        
+        # Get flow data
+        flow_data = {}
+        for flow_file in bot_settings.BOT_CONFIG[self.flow_keyword]:
+            # Get filepath to the flow file
+            flow_filepath = self.bot_filepath
+            flow_filepath += flow_file
+
+            # Read from flow file
+            with open(flow_filepath, 'r') as flow_f:
+                # YAML/JSON
+                flow_data[flow_filepath] = yaml.load(flow_f)
+
+        return flow_data
+
+
     def create_graph_nodes(self, colorful, flow_data):
         """
-		Creates graph nodes from chatbot's flows.
+        Creates graph nodes from chatbot's flows.
 
-		Args:
-			colorful: Whether chatbot's flows should be colored in created graph.
-			flow_data: Chatbot's flow dictionary.
-		"""
+        Args:
+            colorful: Whether chatbot's flows should be colored in created graph.
+            flow_data: Chatbot's flow data dictionary.
+        """
 
         # Flow-color dictionary
-        if colorful:  # Generate colors
-            colors = generate_colors(len(self.flows))
-            flow_color = {flow: color for flow, color in zip(self.flows, colors)}
-        else:  # White colors
-            flow_color = {flow: self.default_color for flow in self.flows}
+        if colorful: # Generate colors
+            colors = ut.generate_colors(len(self.flows))
+            flow_color = {flow:color for flow, color in zip(self.flows, colors)}
+        else: # White colors
+            flow_color = {flow:self.default_color for flow in self.flows}
 
         # Initial node
         self.graph.attr('node', shape='doublecircle', fillcolor=flow_color['default'], style='filled')
-        self.graph.node(self.state_indetifier(self.initial_flow, self.initial_state))
+        self.graph.node(ut.state_identifier(self.initial_flow, self.initial_state))
 
         # Other nodes
         self.graph.attr('node', shape='circle')
@@ -189,17 +133,17 @@ class GraphPlot:
                     # Add non-initial nodes
                     if flow != self.initial_flow or state['name'] != self.initial_state:
                         # Node
-                        node_name = self.state_indetifier(flow, state['name'])
+                        node_name = ut.state_identifier(flow, state['name'])
                         # Add node
                         self.graph.node(node_name)
 
     def create_graph_edges(self, flow_data):
         """
-		Creates graph edges from chatbot's flows.
+        Creates graph edges from chatbot's flows.
 
-		Args:
-			flow_data: Chatbot's flow dictionary.
-		"""
+        Args:
+            flow_data: Chatbot's flow data dictionary.
+        """
 
         # Edges
         for flow_filepath, flow_dict in flow_data.items():
@@ -221,7 +165,7 @@ class GraphPlot:
                                 next_node_name = self.state_indetifier(next_flow, next_state)
 
                                 # Add edge
-                                print('Adding edge: ' + node_name + ' -> ' + next_node_name)
+                                 print('Adding edge: {} -> {}'.format(node_name, next_node_name))
                                 self.graph.edge(node_name, next_node_name)
                             else:
                                 print("State {} is terminal".format(state['name']))
@@ -231,8 +175,7 @@ class GraphPlot:
                             action_name = state['action'].split('.')[-1]
                             action_filepath = state['action'][:-(len(action_name) + 1)].replace('.', '/') + '.py'
 
-                            print(
-                                'Adding edges from custom action \'' + action_name + '\' from file \'' + action_filepath + '\':')
+                            print('Adding edges from custom action \'{}\' from file \'{}\':'.format(action_name, action_filepath))
                             try:  # Absolute action path
                                 action_file_module = module_from_file(action_name,
                                                                       os.path.join(self.bot_filepath, action_filepath))
@@ -258,31 +201,12 @@ class GraphPlot:
                                 next_node_name = self.state_indetifier(next_flow, next_state)
 
                                 # Add edge
-                                print(node_name + ' -> ' + next_node_name)
+                                print('{} -> {}'.format(node_name, next_node_name))
                                 self.graph.edge(node_name, next_node_name)
                     except Exception as ex:
                         print("Error processing state, skipping!")
                         print(ex)
-
-    def get_flow_data(self):
-        # Get bot config
-        bot_settings = module_from_file('bot_settings',
-                                        os.path.join(self.bot_filepath, self.bot_name + '/bot_settings.py'))
-
-        # Get flow data
-        flow_data = {}
-        for flow_file in bot_settings.BOT_CONFIG[self.flow_keyword]:
-            # Get filepath to the flow file
-            flow_filepath = self.bot_filepath
-            flow_filepath += flow_file
-
-            # Read from flow file
-            with open(flow_filepath, 'r') as flow_f:
-                # YAML/JSON
-                flow_data[flow_filepath] = yaml.load(flow_f)
-
-        return flow_data
-
+                        
     def create_graph(self, colorful):
         """
         Creates graph from chatbot's flows.
@@ -308,36 +232,35 @@ class GraphPlot:
         # Add edges
         self.create_graph_edges(flow_data)
 
-    def generate_json(self):
+    def generate_nodes_json(self, flow_data):
         """
-        Generates JSON file from chatbot's flows.
+        Generates graph nodes from chatbot's flows (to JSON).
+
+        Args:
+            flow_data: Chatbot's flow data dictionary.
         """
 
-        # Get flow data
-        flow_data = self.get_flow_data()
-
-        # Get all flows names
-        self.flows = [flow for flow_file in flow_data for flow in flow_data[flow_file]]
-        flow_indexes = {flow: index for index, flow in enumerate(self.flows, 1)}
-
-        print('Generating JSON...')
-        # Create JSON
-        self.json = {}
         # Add nodes to JSON
         self.json['nodes'] = []
-        self.allowed_states = set()
-
         for flow_filepath, flow_dict in flow_data.items():
             for flow, value in flow_dict.items():
                 for state in value['states']:
                     # Node
-                    node_name = self.state_indetifier(flow, state['name'])
+                    node_name = ut.state_indetifier(flow, state['name'])
                     # Add node to JSON
                     self.json['nodes'].append({
                         'id': node_name,
                         'group': flow_indexes[flow]
                     })
                     self.allowed_states.add(node_name)
+
+    def generate_edges_json(self, flow_data):
+        """
+        Generates graph edges from chatbot's flows (to JSON).
+
+        Args:
+            flow_data: Chatbot's flow data dictionary.
+        """
 
         # Add edges to JSON
         self.json['links'] = []
@@ -418,14 +341,40 @@ class GraphPlot:
                         print("Error processing state, skipping!")
                         print(ex)
 
+    def generate_json(self):
+        """
+        Generates JSON file from chatbot's flows.
+        """
+
+        # Get flow data
+        flow_data = self.get_flow_data()
+
+        # Get all flows names
+        self.flows = [flow for flow_file in flow_data for flow in flow_data[flow_file]]
+        flow_indexes = {flow: index for index, flow in enumerate(self.flows, 1)}
+        
+        print('Generating JSON...')
+        # Create JSON
+        self.json = {}
+        # Allowed states
+        self.allowed_states = set()
+        # Nodes
+        self.generate_nodes_json(flow_data)
+        # Edges
+        self.generate_edges_json(flow_data)
+        
     def save_json(self):
+        # Check for JSON
+        assert self.json, 'There is no JSON to save.'
+
+        # Save JSON
         with open(self.json_filepath, 'w') as outfile:
             json.dump(self.json, outfile)
 
     def save_and_show(self):
         """
-		Saves and shows graph.
-		"""
+        Saves and shows graph.
+        """
 
         # Check for graph
         assert self.graph, 'There is no graph to save/show.'
@@ -435,24 +384,23 @@ class GraphPlot:
 
     def save(self):
         """
-		Saves graph.
-		"""
+        Saves graph.
+        """
 
         # Check for graph
         assert self.graph, 'There is no graph to show.'
 
-        # Save graph
+        # Save graph 
         # DOT source
         self.graph.save()
         # Render graph
         self.graph.render()
 
-
 if __name__ == '__main__':
     # Command line arguments
-    # Example: python3 ./graph.py --bot_dir . --bot_name chatbot
-    parser = argparse.ArgumentParser(description='Script for plotting flow graph of Botshot chatbot.')
-    parser.add_argument('--bot_dir', required=True, help='root directory of Botshot project')
+    # Example: python3 ./botshot-graph.py --bot_dir . --bot_name chatbot
+    parser = argparse.ArgumentParser(description='Script for plotting flow graph of Botshot chatbot and generating its JSON representation.')
+    parser.add_argument('--bot_dir', required=True, help='root directory of Botshot chatbot')
     parser.add_argument('--bot_name', required=False, help='chatbot django app name (optional)')
     parser.add_argument('--colorful', action='store_true', help='whether chatbot\'s flows should colored')
     parser.add_argument('--graph_path', default='graph.gv', help='path where graph should be saved')
@@ -460,13 +408,12 @@ if __name__ == '__main__':
     parser.add_argument('--json_output', action='store_true',
                         help='whether JSON should be produced instead of dot file and image')
     parser.add_argument('--json_path', default='graph.json', help='path where JSON should be saved')
-
+    
     args = parser.parse_args()
 
     # Arguments processing
     bot_dir = os.path.join(os.path.dirname(__file__), args.bot_dir)
     bot_dir = os.path.abspath(bot_dir)
-
 
     # Plotting
     graph_plot = GraphPlot(bot_dir, args.bot_name, args.graph_path, args.json_path)
@@ -475,9 +422,10 @@ if __name__ == '__main__':
     if args.json_output:
         graph_plot.generate_json()
         graph_plot.save_json()
-    else:  # Dot file and image
+    # Dot file and image
+    else:
         graph_plot.create_graph(args.colorful)
-
+    
         # Save graph/save and show graph
         if args.dont_show:
             graph_plot.save()
