@@ -7,6 +7,10 @@ import random
 import re
 
 
+# --------------------------------------------------------------------------
+# Graph appearance
+# --------------------------------------------------------------------------
+
 def generate_colors(n):
     """
     Generates n colors.
@@ -35,6 +39,24 @@ def generate_colors(n):
 
     return colors
 
+def state_identifier(flow_name, state_name):
+    """
+    Returns state identifier from provided flow and state names.
+
+    Args:
+        flow_name: Name of the flow.
+        state_name: Name of the state.
+
+    Returns:
+        State identifier.
+    """
+
+    return flow_name + '.' + state_name
+
+# --------------------------------------------------------------------------
+# Custom actions
+# --------------------------------------------------------------------------
+
 def module_from_file(module_name, filepath):
     """
     Gets certain module from given file.
@@ -52,6 +74,10 @@ def module_from_file(module_name, filepath):
     spec.loader.exec_module(module)
     
     return module
+
+# --------------------------------------------------------------------------
+# Source code
+# --------------------------------------------------------------------------
 
 def remove_comments(source_code):
     """
@@ -85,17 +111,3 @@ def return_indexes(source_code):
     """
 
     return [r.start() for r in re.finditer('(^|\W)return($|\W)', source_code)]
-
-def state_identifier(flow_name, state_name):
-    """
-    Returns state identifier from provided flow and state names.
-
-    Args:
-        flow_name: Name of the flow.
-        state_name: Name of the state.
-
-    Returns:
-        State identifier.
-    """
-
-    return flow_name + '.' + state_name

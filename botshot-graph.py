@@ -147,18 +147,21 @@ class GraphPlot:
                 for state in value['states']:
                     node_name = ut.state_identifier(flow, state['name'])
 
-                    try:  # Non-custom action
-                        # Get next (destination) state information
-
+                    try:
                         if 'action' not in state or not state['action']:
                             print("State {} has no action, skipping!".format(state['name']))
                             continue
 
-                        elif isinstance(state['action'], dict):
+                        elif isinstance(state['action'], dict): # Non-custom action
 
                             if 'next' in state['action']:
                                 next_flow, next_state = self.flow_and_state(flow, state['action']['next'])
                                 next_node_name = ut.state_identifier(next_flow, next_state)
+
+                                # Check whether next state exists
+                                if (next_node_name, next_flow) not in self.nodes:
+                                    print("Next state {} not found in states, skipping!".format(next_node_name))
+                                    continue
 
                                 # Add edge
                                 print('{} -> {}'.format(node_name, next_node_name))
@@ -166,7 +169,7 @@ class GraphPlot:
                             else:
                                 print("State {} is terminal".format(state['name']))
 
-                        else:  # action is a function
+                        else: # Custom action (function)
 
                             action_name = state['action'].split('.')[-1]
                             action_filepath = state['action'][:-(len(action_name) + 1)].replace('.', '/') + '.py'
@@ -196,6 +199,11 @@ class GraphPlot:
                                 next_flow, next_state = self.flow_and_state(flow, ret_val)
                                 next_node_name = ut.state_identifier(next_flow, next_state)
 
+                                # Check whether next state exists
+                                if (next_node_name, next_flow) not in self.nodes:
+                                    print("Next state {} not found in states, skipping!".format(next_node_name))
+                                    continue
+
                                 # Add edge
                                 print('{} -> {}'.format(node_name, next_node_name))
                                 edges.append((node_name, next_node_name))
@@ -213,6 +221,7 @@ class GraphPlot:
         # Get flow data
         flow_data = self.get_flow_data()
 
+        print('Creating intermediate representation...')
         # Flows
         self.flows = [flow for flow_file in flow_data for flow in flow_data[flow_file]]
         # Nodes
@@ -410,7 +419,6 @@ if __name__ == '__main__':
 
     # Arguments processing
     bot_dir = os.path.join(os.path.dirname(__file__), args.bot_dir)
-    #bot_dir = os.path.abspath(bot_dir)
 
     # Plotting
     graph_plot = GraphPlot(bot_dir, args.bot_name, args.graph_path, args.json_path)
